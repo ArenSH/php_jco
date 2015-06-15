@@ -12,8 +12,18 @@ typedef struct jco_darray {
 } jco_darray;
 
 
-static void jco_darray_free_object_storage(jco_darray *intern TSRMLS_DC)
-{
+static inline long zval_to_long(zval *zv) {
+    if (Z_TYPE_P(zv) == IS_LONG) {
+        return Z_LVAL_P(zv);
+    } else {
+        zval tmp = *zv;
+        zval_copy_ctor(&tmp);
+        convert_to_long(&tmp);
+        return Z_LVAL(tmp);
+    }
+}
+
+static void jco_darray_free_object_storage(jco_darray *intern TSRMLS_DC) {
     zend_object_std_dtor(&intern->std TSRMLS_CC);
 
     if (intern->array) {
@@ -42,6 +52,146 @@ zend_object_value jco_darray_create_object(zend_class_entry *class_type TSRMLS_D
     retval.handlers = &jco_darray_handlers;
 
     return retval;
+}
+
+
+static zend_object_value jco_darray_clone(zval *object TSRMLS_DC) {
+    jco_darray *old_object = zend_object_store_get_object(object TSRMLS_CC);
+
+    zend_object_value new_object_val = jco_darray_create_object(Z_OBJCE_P(object) TSRMLS_CC);
+    jco_darray *new_object = zend_object_store_get_object_by_handle(new_object_val.handle TSRMLS_CC);
+
+    zend_objects_clone_members(
+        &new_object->std, new_object_val,
+        &old_object->std, Z_OBJ_HANDLE_P(object) TSRMLS_CC
+    );
+
+    new_object->array = jco_ds_darray_clone(old_object->array);
+
+    if (!new_object->array) {
+        zend_throw_exception(NULL, "Failed to clone jco_darray", 0 TSRMLS_CC);
+    }
+
+    return new_object_val;
+}
+
+static zval *jco_darray_read_dimension(zval *object, zval *zv_offset, int type TSRMLS_DC) {
+    jco_darray *intern = zend_object_store_get_object(object TSRMLS_CC);
+    
+    if (intern->std.ce->parent) {
+        return zend_get_std_object_handlers()->read_dimension(object, zv_offset, type TSRMLS_CC);
+    }
+
+    if (!zv_offset) {
+        zend_throw_exception(NULL, "Cannot append to a jco_darray", 0 TSRMLS_CC);
+        return NULL;
+    }
+
+    long offset = zval_to_long(zv_offset);
+    if (offset < 0 || offset > jco_ds_darray_length(intern->array)) {
+        zend_throw_exception(NULL, "Offset out of range", 0 TSRMLS_CC);
+        return NULL;
+    }
+
+    zval *return_value;
+    zval *value = jco_ds_darray_get(intern->array, offset);
+
+    if (value) {
+
+        if (type == BP_VAR_W) {
+            return_value = value;
+            Z_SET_ISREF_P(return_value);
+        } else {
+            MAKE_STD_ZVAL(return_value);
+            ZVAL_ZVAL(return_value, value, 1, 0);
+            Z_DELREF_P(return_value);
+        }
+    } else {
+        MAKE_STD_ZVAL(return_value);
+        ZVAL_NULL(return_value);
+        Z_DELREF_P(return_value);
+    }
+
+    return return_value;
+}
+
+
+static void jco_darray_write_dimension(zval *object, zval *zv_offset, zval *value TSRMLS_DC) {
+    jco_darray *intern = zend_object_store_get_object(object TSRMLS_CC);
+
+    if (intern->std.ce->parent) {
+        return zend_get_std_object_handlers()->write_dimension(object, zv_offset, value TSRMLS_CC);
+    }
+
+
+    if (!zv_offset) {
+        zend_throw_exception(NULL, "Cannot append to a jco_darray", 0 TSRMLS_CC);
+    }
+
+    long offset = zval_to_long(zv_offset);
+    if (offset < 0) {
+        zend_throw_exception(NULL, "Offset out of range", 0 TSRMLS_CC);
+    }
+
+    zval *saved_val = jco_ds_darray_set(intern->array, (size_t)offset, value);
+    if (saved_val == NULL) {
+        zend_throw_exception(NULL, "Error occured during dimension write", 0 TSRMLS_CC);
+    }
+}
+
+
+static int jco_darray_has_dimension(zval *object, zval *zv_offset, int check_empty TSRMLS_DC) {
+    jco_darray *intern = zend_object_store_get_object(object TSRMLS_CC);
+
+    if (intern->std.ce->parent) {
+        return zend_get_std_object_handlers()->has_dimension(object, zv_offset, check_empty TSRMLS_CC);
+    }
+
+    long offset = zval_to_long(zv_offset);
+    if (offset < 0 || offset > jco_ds_darray_length(intern->array)) {
+        return 0;
+    }
+
+    if (check_empty) {
+        zval *value = jco_ds_darray_get(intern->array, offset);
+        if (value == NULL) {
+            return 0;
+        }
+
+        return zend_is_true(value);
+    }
+
+}
+
+static void jco_darray_unset_dimension(zval *object, zval *zv_offset TSRMLS_DC) {
+    jco_darray *intern = zend_object_store_get_object(object TSRMLS_CC);
+
+    if (intern->std.ce->parent) {
+        return zend_get_std_object_handlers()->unset_dimension(object, zv_offset TSRMLS_CC);
+    }
+
+    long offset = zval_to_long(zv_offset);
+    if (offset < 0 || offset > jco_ds_darray_length(intern->array)) {
+        zend_throw_exception(NULL, "Offset out of range", 0 TSRMLS_CC);
+    }
+
+    jco_ds_darray_unset(intern->array, offset);
+}
+
+int jco_darray_count_elements(zval *object, long *count TSRMLS_DC) {
+    jco_darray *intern = zend_object_store_get_object(object TSRMLS_CC);
+
+    if (intern->std.ce->parent) {
+        return zend_get_std_object_handlers()->count_elements(object, count TSRMLS_CC);
+    }
+
+    if (intern && intern->array) {
+        *count = (long)jco_ds_darray_count(intern->array);
+        return SUCCESS;
+    } else {
+        *count = 0;
+        return FAILURE;
+    }
 }
 
 
@@ -220,6 +370,13 @@ void jco_darray_init(TSRMLS_D)
     memcpy(&jco_darray_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
 
     zend_class_implements(jco_darray_ce TSRMLS_CC, 1, zend_ce_arrayaccess);
+
+    jco_darray_handlers.has_dimension   = jco_darray_has_dimension;
+    jco_darray_handlers.read_dimension  = jco_darray_read_dimension;
+    jco_darray_handlers.write_dimension = jco_darray_write_dimension;
+    jco_darray_handlers.unset_dimension = jco_darray_unset_dimension;
+    jco_darray_handlers.count_elements  = jco_darray_count_elements;
+    jco_darray_handlers.clone_obj = jco_darray_clone;
 
     return;
 }

@@ -11,6 +11,12 @@ typedef struct jco_darray {
     jco_ds_darray *array;
 } jco_darray;
 
+typedef struct _jco_darray_iterator_data {
+    zval *object_zval;
+    jco_darray *object;
+    size_t offset;
+    zval *current;
+} jco_darray_iterator_data;
 
 static inline long zval_to_long(zval *zv) {
     if (Z_TYPE_P(zv) == IS_LONG) {
@@ -195,6 +201,115 @@ int jco_darray_count_elements(zval *object, long *count TSRMLS_DC) {
 }
 
 
+static void jco_darray_iterator_dtor(zend_object_iterator *intern TSRMLS_DC) {
+    jco_darray_iterator_data *data = (jco_darray_iterator_data *)intern->data;
+
+    if (data->current != NULL) {
+        zval_ptr_dtor(&data->current);
+    }
+
+    zval_ptr_dtor((zval **)&data->object_zval);
+    efree(data);
+    efree(intern);
+}
+
+static int jco_darray_iterator_valid(zend_object_iterator *intern TSRMLS_DC) {
+    jco_darray_iterator_data *data = (jco_darray_iterator_data *)intern->data;
+
+    return jco_ds_darray_length(data->object->array) > data->offset ? SUCCESS : FAILURE;
+}
+
+static void jco_darray_iterator_get_current_data(zend_object_iterator *intern, zval ***data TSRMLS_DC) {
+    jco_darray_iterator_data *iter_data = (jco_darray_iterator_data *)intern->data;
+
+    if (iter_data->current != NULL) {
+        zval_ptr_dtor(&iter_data->current);
+        iter_data->current = NULL;
+    }
+
+    if (iter_data->offset < jco_ds_darray_length(iter_data->object->array)) {
+        zval *value = jco_ds_darray_get(iter_data->object->array, iter_data->offset);
+        if (value != NULL) {
+            MAKE_STD_ZVAL(iter_data->current);
+            ZVAL_ZVAL(iter_data->current, value, 1, 0);
+
+            *data = &iter_data->current;
+        } else {
+            *data = NULL;
+        }
+
+    } else {
+        *data = NULL;
+    }
+}
+
+
+#if ZEND_MODULE_API_NO >= 20121212
+static void jco_darray_iterator_get_current_key(zend_object_iterator *intern, zval *key TSRMLS_DC) {
+    jco_darray_iterator_data *data = (jco_darray_iterator_data *) intern->data;
+    ZVAL_LONG(key, data->offset);
+}
+#else
+static int jco_darray_iterator_get_current_key(
+    zend_object_iterator *intern, char **str_key, uint *str_key_len, ulong *int_key TSRMLS_DC
+) {
+    jco_darray_iterator_data *data = (jco_darray_iterator_data *) intern->data;
+
+    *int_key = (ulong) data->offset;
+    return HASH_KEY_IS_LONG;
+}
+#endif
+
+static void jco_darray_iterator_move_forward(zend_object_iterator *intern TSRMLS_DC) {
+    jco_darray_iterator_data *data = (jco_darray_iterator_data *) intern->data;
+
+    data->offset++;
+}
+
+static void jco_darray_iterator_rewind(zend_object_iterator *intern TSRMLS_DC)
+{
+    jco_darray_iterator_data *data = (jco_darray_iterator_data *) intern->data;
+
+    data->offset = 0;
+    data->current = NULL;
+}
+
+static zend_object_iterator_funcs jco_darray_iterator_funcs = {
+    jco_darray_iterator_dtor,
+    jco_darray_iterator_valid,
+    jco_darray_iterator_get_current_data,
+    jco_darray_iterator_get_current_key,
+    jco_darray_iterator_move_forward,
+    jco_darray_iterator_rewind,
+    NULL
+};
+
+zend_object_iterator *jco_darray_get_iterator(zend_class_entry *ce, zval *object, int by_ref TSRMLS_DC) {
+    zend_object_iterator *iter;
+    jco_darray_iterator_data *iter_data;
+
+    if (by_ref) {
+        zend_throw_exception(NULL, "UPS, no by reference iteration!", 0 TSRMLS_CC);
+        return NULL;
+    }
+
+    iter = emalloc(sizeof(zend_object_iterator));
+    iter->funcs = &jco_darray_iterator_funcs;
+
+    iter_data = emalloc(sizeof(jco_darray_iterator_data));
+    iter_data->object_zval = object;
+    Z_ADDREF_P(object);
+
+    iter_data->object = zend_object_store_get_object(object TSRMLS_CC);
+    iter_data->offset = 0;
+    iter_data->current = NULL;
+
+    iter->data = iter_data;
+
+    return iter;
+}
+
+
 PHP_METHOD(jco_darray, __construct)
 {
     jco_darray *intern;
@@ -367,9 +482,11 @@ void jco_darray_init(TSRMLS_D)
 
     jco_darray_ce = zend_register_internal_class(&tmp_ce TSRMLS_CC);
     jco_darray_ce->create_object = jco_darray_create_object;
+    jco_darray_ce->get_iterator = jco_darray_get_iterator;
+    jco_darray_ce->iterator_funcs.funcs = &jco_darray_iterator_funcs;
     memcpy(&jco_darray_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
 
-    zend_class_implements(jco_darray_ce TSRMLS_CC, 1, zend_ce_arrayaccess);
+    zend_class_implements(jco_darray_ce TSRMLS_CC, 2, zend_ce_arrayaccess, zend_ce_traversable);
 
     jco_darray_handlers.has_dimension   = jco_darray_has_dimension;
     jco_darray_handlers.read_dimension  = jco_darray_read_dimension;

@@ -29,3 +29,11 @@ echo "AR" . PHP_EOL;
 echo "TIME: " . (microtime(true) - $t1) . PHP_EOL;
 echo "MEMORY: " . ((memory_get_usage() - $m1)/1048576) . PHP_EOL;
 gc_collect_cycles();
+
+
+
+foreach($jar as $val) {
+	if(($val % 100000) == 0) {
+		echo $val . PHP_EOL;
+	}
+}

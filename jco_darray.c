@@ -1,4 +1,5 @@
 #include "php.h"
+#include "zend_interfaces.h"
 #include "jco_darray.h"
 #include "ds/darray.h"
 
@@ -79,6 +80,102 @@ PHP_METHOD(jco_darray, __construct)
     return;
 }
 
+
+PHP_METHOD(jco_darray, count)
+{
+    jco_darray *intern;
+    long count;
+
+    intern = zend_object_store_get_object(getThis() TSRMLS_CC);
+    count = (long)jco_ds_darray_count(intern->array);
+
+    ZVAL_LONG(return_value, count);
+}
+
+PHP_METHOD(jco_darray, length)
+{
+    jco_darray *intern;
+    long length;
+
+    intern = zend_object_store_get_object(getThis() TSRMLS_CC);
+    length = (long) jco_ds_darray_length(intern->array);
+
+    ZVAL_LONG(return_value, length);
+}
+
+PHP_METHOD(jco_darray, offsetSet)
+{
+    jco_darray *intern;
+    zval *val;
+    long index;
+
+
+    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "lz", &index, &val) == FAILURE) {
+        zend_throw_exception(NULL, "Failed to parse arguments", 0 TSRMLS_CC);
+        return;
+    }
+
+    intern = zend_object_store_get_object(getThis() TSRMLS_CC);
+    jco_ds_darray_set(intern->array, (size_t)index, val);
+
+}
+
+PHP_METHOD(jco_darray, offsetUnset)
+{
+    jco_darray *intern;
+    long index;
+
+    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "l", &index) == FAILURE) {
+        zend_throw_exception(NULL, "Invalid index passed", 0 TSRMLS_CC);
+        return;
+    }
+
+
+    intern = zend_object_store_get_object(getThis() TSRMLS_CC);
+    jco_ds_darray_unset(intern->array, (size_t)index);
+}
+
+PHP_METHOD(jco_darray, offsetGet)
+{
+    jco_darray *intern;
+    long index;
+
+    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "l", &index) == FAILURE) {
+        zend_throw_exception(NULL, "Invalid index passed", 0 TSRMLS_CC);
+        return;
+    }
+
+
+    intern = zend_object_store_get_object(getThis() TSRMLS_CC);
+    zval *val = jco_ds_darray_get(intern->array, (size_t)index);
+
+    if (val) {
+        ZVAL_ZVAL(return_value, val, 1, 0);
+    } else {
+        ZVAL_NULL(return_value);
+    }
+}
+
+PHP_METHOD(jco_darray, offsetExists)
+{
+    jco_darray *intern;
+    long index;
+
+    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "l", &index) == FAILURE) {
+        zend_throw_exception(NULL, "Invalid index passed", 0 TSRMLS_CC);
+        return;
+    }
+
+
+    intern = zend_object_store_get_object(getThis() TSRMLS_CC);
+    zval *val = jco_ds_darray_get(intern->array, (size_t)index);
+    if (val) {
+        ZVAL_TRUE(return_value);
+    } else {
+        ZVAL_FALSE(return_value);
+    }
+}
+
 PHP_METHOD(jco_darray, sayHello)
 {
     RETURN_STRING("Hello from darray!", 1);
@@ -93,9 +190,23 @@ ZEND_ARG_INFO(0, size)
 ZEND_ARG_INFO(0, capacity)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_INFO_EX(arginfo_jco_darray_offset, 0, 0, 1)
+ZEND_ARG_INFO(0, offset)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_jco_darray_offset_value, 0, 0, 2)
+ZEND_ARG_INFO(0, offset)
+ZEND_ARG_INFO(0, value)
+ZEND_END_ARG_INFO()
+
 const zend_function_entry jco_darray_functions[] = {
     PHP_ME(jco_darray, __construct, arginfo_construct, ZEND_ACC_PUBLIC)
-    PHP_ME(jco_darray, sayHello, arginfo_void, ZEND_ACC_PUBLIC)
+    PHP_ME(jco_darray, offsetSet, arginfo_jco_darray_offset_value, ZEND_ACC_PUBLIC)
+    PHP_ME(jco_darray, offsetGet, arginfo_jco_darray_offset, ZEND_ACC_PUBLIC)
+    PHP_ME(jco_darray, offsetUnset, arginfo_jco_darray_offset, ZEND_ACC_PUBLIC)
+    PHP_ME(jco_darray, offsetExists, arginfo_jco_darray_offset, ZEND_ACC_PUBLIC)
+    PHP_ME(jco_darray, count, arginfo_void, ZEND_ACC_PUBLIC)
+    PHP_ME(jco_darray, length, arginfo_void, ZEND_ACC_PUBLIC)
     PHP_FE_END
 };
 
@@ -107,6 +218,8 @@ void jco_darray_init(TSRMLS_D)
     jco_darray_ce = zend_register_internal_class(&tmp_ce TSRMLS_CC);
     jco_darray_ce->create_object = jco_darray_create_object;
     memcpy(&jco_darray_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
+
+    zend_class_implements(jco_darray_ce TSRMLS_CC, 1, zend_ce_arrayaccess);
 
     return;
 }

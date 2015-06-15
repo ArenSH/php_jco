@@ -12,7 +12,11 @@ typedef  struct jco_ds_darray {
 } jco_ds_darray;
 
 jco_ds_darray *jco_ds_darray_create(size_t size, size_t capacity);
+jco_ds_darray *jco_ds_darray_clone(jco_ds_darray *array);
 void jco_ds_darray_destroy(jco_ds_darray *array);
+zval *jco_ds_darray_get(jco_ds_darray *array, size_t index);
+zval *jco_ds_darray_set(jco_ds_darray *array, size_t index, zval *value);
+void jco_ds_darray_unset(jco_ds_darray *array, size_t index);
 
 #define jco_ds_darray_length(array) ((array)->length)
 #define jco_ds_darray_min_length(array) ((array)->min_length)

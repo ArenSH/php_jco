@@ -441,11 +441,83 @@ PHP_METHOD(jco_darray, offsetExists)
     }
 }
 
-PHP_METHOD(jco_darray, sayHello)
-{
-    RETURN_STRING("Hello from darray!", 1);
-}
 
+
+PHP_METHOD(jco_darray, filter)
+{
+    jco_darray *intern;
+    jco_darray *newArray;
+
+    zval *retArray;
+    zend_fcall_info fci = empty_fcall_info;
+    zend_fcall_info_cache fci_cache = empty_fcall_info_cache;
+
+    int have_callback = 0;
+    if (ZEND_NUM_ARGS() > 0) {
+        have_callback = 1;
+
+        if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "|f", &fci, &fci_cache) == FAILURE) {
+            zend_throw_exception(NULL, "Invalid callback passed", 0 TSRMLS_CC);
+            return;
+        }
+
+    }
+
+    intern = zend_object_store_get_object(getThis() TSRMLS_CC);
+
+    MAKE_STD_ZVAL(retArray);
+    object_init_ex(retArray, jco_darray_ce);
+    newArray = zend_object_store_get_object(retArray TSRMLS_CC);
+    newArray->array = jco_ds_darray_create(jco_ds_darray_min_length(intern->array), jco_ds_darray_capacity(intern->array));
+
+    if (!newArray->array) {
+        zend_throw_exception(NULL, "Failed to allocate new array", 0 TSRMLS_CC);
+        zval_ptr_dtor(&retArray);
+        return;
+    }
+
+    zval *val;
+    size_t i = 0;
+    size_t newIndex = 0;
+    if (!have_callback) {
+        for (i = 0; i < jco_ds_darray_length(intern->array); i++) {
+            val = jco_ds_darray_get(intern->array, i);
+            if (val != NULL && zend_is_true(val)) {
+                jco_ds_darray_set(newArray->array, newIndex++, val);
+            }
+        }
+    } else {
+        zval **args[1];
+        zval *retval;
+
+        fci.no_separation = 1;
+        fci.retval_ptr_ptr = &retval;
+        fci.param_count = 1;
+
+        for (i = 0; i < jco_ds_darray_length(intern->array); i++) {
+
+            val = jco_ds_darray_get(intern->array, i);
+            if (val != NULL) {
+                args[0] = &val;
+                fci.params = args;
+                if (zend_call_function(&fci, &fci_cache TSRMLS_CC) == SUCCESS && retval) {
+                    if (zend_is_true(retval)) {
+                        jco_ds_darray_set(newArray->array, newIndex++, val);
+                    }
+                    zval_ptr_dtor(&retval);
+
+                } else {
+                    php_error_docref(NULL TSRMLS_CC, E_WARNING, "An error occurred while invoking the filter callback");
+                    return;
+                }
+
+            }
+        }
+
+    }
+
+    RETVAL_ZVAL(retArray, 1, 1);
+}
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_void, 0, 0, 0)
 ZEND_END_ARG_INFO()
@@ -464,12 +536,17 @@ ZEND_ARG_INFO(0, offset)
 ZEND_ARG_INFO(0, value)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_INFO_EX(arginfo_jarray_filter, 0, 0, 1)
+ZEND_ARG_INFO(0, callback)
+ZEND_END_ARG_INFO()
+
 const zend_function_entry jco_darray_functions[] = {
     PHP_ME(jco_darray, __construct, arginfo_construct, ZEND_ACC_PUBLIC)
     PHP_ME(jco_darray, offsetSet, arginfo_jco_darray_offset_value, ZEND_ACC_PUBLIC)
     PHP_ME(jco_darray, offsetGet, arginfo_jco_darray_offset, ZEND_ACC_PUBLIC)
     PHP_ME(jco_darray, offsetUnset, arginfo_jco_darray_offset, ZEND_ACC_PUBLIC)
     PHP_ME(jco_darray, offsetExists, arginfo_jco_darray_offset, ZEND_ACC_PUBLIC)
+    PHP_ME(jco_darray, filter, arginfo_jarray_filter, ZEND_ACC_PUBLIC)
     PHP_ME(jco_darray, count, arginfo_void, ZEND_ACC_PUBLIC)
     PHP_ME(jco_darray, length, arginfo_void, ZEND_ACC_PUBLIC)
     PHP_FE_END

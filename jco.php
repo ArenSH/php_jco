@@ -16,6 +16,36 @@ echo "TIME: " . (microtime(true) - $t1) . PHP_EOL;
 echo "MEMORY: " . ((memory_get_usage() - $m1)/1048576) . PHP_EOL;
 gc_collect_cycles();
 
+$t1 = microtime(true);
+$m1 = memory_get_usage();
+
+$nar = $jar->filter(function($n) {return $n % 2 == 0;});
+
+echo "JCO\Darray filter" . PHP_EOL;
+echo "TIME: " . (microtime(true) - $t1) . PHP_EOL;
+echo "MEMORY: " . ((memory_get_usage() - $m1)/1048576) . PHP_EOL;
+gc_collect_cycles();
+
+
+$t1 = microtime(true);
+$m1 = memory_get_usage();
+
+$nar = new \JCO\DArray(250000, 10000);
+$i = 0;
+foreach($jar as $val) {
+	if($val % 2 == 0) {
+		$nar[$i] = $val;
+		$i++;
+	}
+}
+
+echo "JCO\Darray filter foreach" . PHP_EOL;
+echo "TIME: " . (microtime(true) - $t1) . PHP_EOL;
+echo "MEMORY: " . ((memory_get_usage() - $m1)/1048576) . PHP_EOL;
+unset($jar);
+unset($newArr);
+gc_collect_cycles();
+
 
 $t1 = microtime(true);
 $m1 = memory_get_usage();
@@ -25,15 +55,24 @@ foreach($data as $index => &$val) {
 	$ar[$index] = $val * 3;
 }
 
-echo "AR" . PHP_EOL;
+echo "Array" . PHP_EOL;
 echo "TIME: " . (microtime(true) - $t1) . PHP_EOL;
 echo "MEMORY: " . ((memory_get_usage() - $m1)/1048576) . PHP_EOL;
 gc_collect_cycles();
 
 
+$t1 = microtime(true);
+$m1 = memory_get_usage();
+$newAr = [];
 
-foreach($jar as $val) {
-	if(($val % 100000) == 0) {
-		echo $val . PHP_EOL;
+foreach($ar as $index => &$val) {
+	if($val % 2 == 0) {
+		$newAr[] = $val;
 	}
 }
+
+echo "Array filter" . PHP_EOL;
+echo "TIME: " . (microtime(true) - $t1) . PHP_EOL;
+echo "MEMORY: " . ((memory_get_usage() - $m1)/1048576) . PHP_EOL;
+
+gc_collect_cycles();

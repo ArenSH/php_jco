@@ -5,19 +5,15 @@
 
 #include "php.h"
 #include "php_jco.h"
-
-PHP_FUNCTION(hello_from_jco)
-{
-	RETURN_STRING("JCO ENABLED! YEY!", 1);
-}
+#include "jco_darray.h"
 
 const zend_function_entry jco_functions[] = {
-	PHP_FE(hello_from_jco,	NULL)	
     PHP_FE_END
 };
 
 PHP_MINIT_FUNCTION(jco_init)
 {
+	jco_darray_init(TSRMLS_C);
     return SUCCESS;
 }
 
